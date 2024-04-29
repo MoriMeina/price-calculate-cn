@@ -20,10 +20,10 @@ db = SQLAlchemy(app)
 
 
 class Cost(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uuid = db.Column(db.String(255), primary_key=True)  # uuid
     city = db.Column(db.String(255))  # 区县
     commit_id = db.Column(db.String(255))  # 申请单号
-    uuid = db.Column(db.String(255))  # uuid
     second_unit = db.Column(db.String(255))  # 二级单位
     unit = db.Column(db.String(255))  # 单位
     service = db.Column(db.String(255))  # 项目名称
@@ -56,7 +56,8 @@ class Cost(db.Model):
 
 
 class Price(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uuid = db.Column(db.String(255), primary_key=True)
     project = db.Column(db.String(255))
     billing = db.Column(db.String(255))
     format_name = db.Column(db.String(255))
@@ -66,20 +67,39 @@ class Price(db.Model):
 
 
 class Service(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uuid = db.Column(db.String(255), primary_key=True)
+    city = db.Column(db.String(255))
     unit = db.Column(db.String(255))
-    service_name = db.Column(db.String(255))
+    second_unit = db.Column(db.String(255))
+    service = db.Column(db.String(255))
+    client = db.Column(db.String(255))
+    client_phone = db.Column(db.String(255))
 
 
 class City(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     cities = db.Column(db.String(255))
     with_elect = db.Column(db.Boolean, default=False)
     uuid = db.Column(db.String(255), primary_key=True)
 
 
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uuid = db.Column(db.String(255), primary_key=True)
+    product = db.Column(db.String(255))
+
+
+class System(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    uuid = db.Column(db.String(255), primary_key=True)
+    system = db.Column(db.String(255))
+
+
 @app.route('/get_cost', methods=['POST'])
 def get_cost():
     data = request.get_json()
+    uuid = data.get('uuid')
     cities = data.get('city')
     commit_id = data.get('commit_id')
     second_unit = data.get('second_unit')
@@ -91,6 +111,9 @@ def get_cost():
     systems = data.get('system')
 
     query = Cost.query
+
+    if uuid:
+        query = query.filter(Cost.uuid == uuid)
 
     if commit_id:
         if isinstance(commit_id, list):
@@ -143,7 +166,8 @@ def get_cost():
 
     if systems:
         if isinstance(systems, list):
-            system_filters = [getattr(Cost, system_field).like(f"%{sys}%") for sys in systems for system_field in systems]
+            system_filters = [getattr(Cost, system_field).like(f"%{sys}%") for sys in systems for system_field in
+                              systems]
             query = query.filter(or_(*system_filters))
         else:
             system_filters = [getattr(Cost, system_field).like(f"%{systems}%") for system_field in systems]
@@ -293,31 +317,44 @@ def add_cost():
     data = request.json
 
     # 解析数据
-    city = data.get('city')
+    service_name = data.get('service')
+
+    # 查询Service表获取相关信息
+    service_info = Service.query.filter_by(service=service_name).first()
+
+    # 如果查询结果为空，返回错误信息
+    if service_info is None:
+        return jsonify({'error': 'Service not found'}), 404
+
+    # 解析Service表中的相关信息
+    unit = service_info.unit
+    second_unit = service_info.second_unit
+    client = service_info.client
+    client_phone = service_info.client_phone
+    city = service_info.city  # 获取城市信息
+
+    # 解析其他字段
     commit_id = data.get('commit_id')
-    unit = data.get('unit')
-    second_unit = data.get('second_unit')
-    service = data.get('service')
     usingfor = data.get('usingfor')
     ip = data.get('ip')
     eip = data.get('eip')
-    start_time = datetime.strptime(data.get('start_time'), '%Y-%m-%d %H:%M:%S')
-    start_bill_time = datetime.strptime(data.get('start_bill_time'), '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime(data.get('start_time'), '%Y-%m-%d')
+    start_bill_time = datetime.strptime(data.get('start_bill_time'), '%Y-%m-%d')
     ssd = data.get('ssd')
     hdd = data.get('hdd')
     rds_storage = data.get('rds_storage')
     oss_storage = data.get('oss_storage')
-    sec_fee = data.get('sec_fee', True)  # 默认为 True
-    client = data.get('client')
-    client_phone = data.get('client_phone')
     comment = data.get('comment')
+    bill_subject = data.get('bill_subject')  # 解析 bill_subject 字段
 
     # 创建 Cost 对象并保存到数据库
     cost = Cost(city=city, commit_id=commit_id, unit=unit, second_unit=second_unit,
-                service=service, usingfor=usingfor, ip=ip, eip=eip,
+                service=service_name, usingfor=usingfor, ip=ip, eip=eip,
                 start_time=start_time, start_bill_time=start_bill_time,
                 ssd=ssd, hdd=hdd, rds_storage=rds_storage, oss_storage=oss_storage,
-                sec_fee=sec_fee, client=client, client_phone=client_phone, comment=comment)
+                client=client, client_phone=client_phone, comment=comment,
+                bill_subject=bill_subject)  # 将解析的 bill_subject 传递给 Cost 对象
+
     # 保存到数据库
     db.session.add(cost)
     db.session.commit()
@@ -363,6 +400,108 @@ def subject_filter():
         'value': price.format
     } for price in prices]
     return jsonify(price_data)
+
+
+@app.route('/city_choose', methods=['GET'])
+def city_choose():
+    cities = City.query.all()
+    city_data = []
+    for city in cities:
+        city_data.append({
+            'label': city.cities,
+            'value': city.cities
+        })
+    return jsonify(city_data)
+
+
+@app.route('/get_product', methods=['GET'])
+def get_product():
+    products = Product.query.all()
+    product_data = []
+    for product in products:
+        product_data.append({
+            'label': product.product,
+            'value': product.product
+        })
+    return jsonify(product_data)
+
+
+@app.route('/get_ecs', methods=['GET'])
+def get_ecs():
+    ecses = Price.query.filter_by(project='ECS')
+    ecs_data = []
+    for ecs in ecses:
+        ecs_data.append({
+            'label': ecs.format,
+            'value': ecs.format
+        })
+    return jsonify(ecs_data)
+
+
+@app.route('/get_rds', methods=['GET'])
+def get_rds():
+    rdses = Price.query.filter_by(project='RDS')
+    rds_data = []
+    for rds in rdses:
+        rds_data.append({
+            'label': rds.format,
+            'value': rds.format
+        })
+    return jsonify(rds_data)
+
+
+@app.route('/get_system', methods=['GET'])
+def get_system():
+    systems = System.query.all()
+    system_data = []
+    for system in systems:
+        system_data.append({
+            'label': system.system,
+            'value': system.system
+        })
+    return jsonify(system_data)
+
+
+@app.route('/get_service', methods=['POST'])
+def get_service():
+    data = request.get_json()
+    cities = data.get('city')
+
+    # 使用city来过滤Service表中的内容
+    filtered_services = Service.query.filter_by(city=cities).all()
+
+    # 将过滤后的结果转换为字典列表
+    service_data = []
+    for service in filtered_services:
+        service_data.append({
+            'city': service.city,
+            'unit': service.unit,
+            'second_unit': service.second_unit,
+            'service': service.service
+        })
+
+    # 构建树状结构
+    tree_structure = {}
+
+    for entry in service_data:
+        unit = entry["unit"]
+        second_unit = entry["second_unit"]
+        service = entry["service"]
+
+        if unit not in tree_structure:
+            tree_structure[unit] = {"title": unit, "value": unit, "children": []}
+
+        if second_unit is None:
+            tree_structure[unit]["children"].append({"title": service, "value": service})
+        else:
+            if second_unit not in tree_structure[unit]["children"]:
+                tree_structure[unit]["children"][second_unit] = {"title": second_unit, "value": second_unit,
+                                                                 "children": []}
+
+            tree_structure[unit]["children"][second_unit]["children"].append({"title": service, "value": service})
+
+    # 返回符合条件的Service表中的内容给前端
+    return jsonify(list(tree_structure.values()))
 
 
 if __name__ == '__main__':
