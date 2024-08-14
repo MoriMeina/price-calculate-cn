@@ -53,7 +53,6 @@ class Cost(db.Model):
     oss_storage = db.Column(db.Integer)
     sec_fee = db.Column(db.Boolean)
     add_fee = db.Column(db.String(255))
-    bf_changed_price = db.Column(db.Integer)
     visible = db.Column(db.Boolean)
     ischanged = db.Column(db.Boolean)
     ischangedtime = db.Column(db.DateTime)
@@ -222,23 +221,31 @@ def calculate_price():
         # 计算总费用
         start_date = cost.start_bill_time
 
+        # 处理计费逻辑
         if cost.ischangedtime:  # 忽略 changedtime 的记录
-            continue
+            is_changed_time = cost.ischangedtime
+            is_changed_date_str = str(is_changed_time).split(' ')[0]  # 获取日期部分
+            is_changed_date = datetime.strptime(is_changed_date_str, '%Y-%m-%d').date()
 
-        # 计算计费月数
-        if start_date >= start_month and start_date <= end_month:
-            month_difference = (end_month.year - start_date.year) * 12 + end_month.month - start_date.month + 1
-        elif start_date < start_month:
-            month_difference = (end_month.year - start_month.year) * 12 + end_month.month - start_month.month + 1
-        else:
-            month_difference = 0  # 不在请求时间段内
+            if start_month <= is_changed_date <= end_month:
+                if start_date < start_month:
+                    month_difference = (is_changed_date - start_month).days // 30 + 1
+                else:
+                    month_difference = (is_changed_date - start_date).days // 30 + 1
+            elif is_changed_date > end_month:
+                month_difference = (end_month - start_date).days // 30 + 1
+            else:
+                month_difference = 0  # is_changed在请求范围之前
+        else:  # 没有is_changed，使用原来的逻辑
+            if start_month <= start_date <= end_month:
+                month_difference = (end_month.year - start_date.year) * 12 + end_month.month - start_date.month + 1
+            elif start_date < start_month:
+                month_difference = (end_month.year - start_month.year) * 12 + end_month.month - start_month.month + 1
+            else:
+                month_difference = 0  # 不在请求时间段内
 
         # 计算总费用
         total_price = monthly_price * month_difference
-
-        # 如果 bf_changed_price 不为空，加入到总费用中
-        if cost.bf_changed_price is not None:
-            total_price += cost.bf_changed_price
 
         # 构建返回结果字典
         result.append({
@@ -255,7 +262,6 @@ def calculate_price():
             'ip': cost.ip,
             'eip': cost.eip,
             'start_time': cost.start_time,
-            # 'start_bill_time': str(cost.start_bill_time),
             'storage': storage_str,
             'comment': cost.comment,
             'visible': cost.visible,
