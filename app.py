@@ -3,6 +3,7 @@ from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from sqlalchemy import and_, or_
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -76,6 +77,19 @@ class City(db.Model):
     __tablename__ = 'city'
     cities = db.Column(db.String(255), primary_key=True)
     with_elect = db.Column(db.Boolean)
+
+
+class AddFee(db.Model):
+    __tablename__ = 'add_fee'
+    id = db.Column(db.Integer, primary_key=True)
+    product = db.Column(db.String(255))
+    price = db.Column(db.Float)  # 使用浮点数来表示价格
+
+
+class YearVersion(db.Model):
+    __tablename__ = 'year_version'
+    id = db.Column(db.Integer, primary_key=True)
+    year_version = db.Column(db.String(255), primary_key=True)
 
 
 def build_tree_data(services):
@@ -158,48 +172,63 @@ def get_tree_data():
 def calculate_price():
     data = request.json
 
-    # 获取请求的参数
     cost_month = data.get('cost_month')
     service = data.get('service')
     year_version = data.get('year_version')
     search = data.get('search')
     search_type = data.get('search_type')
 
-    # 确保 cost_month 是一个包含两个日期字符串的列表
     if isinstance(cost_month, list) and len(cost_month) == 2:
         start_month = datetime.strptime(cost_month[0], '%Y-%m').date()
         end_month = datetime.strptime(cost_month[1], '%Y-%m').date()
     else:
         return jsonify({'error': 'Invalid cost_month format. It should be a list with two date strings.'}), 400
 
-    # 基本查询过滤条件
     filters = [Cost.service.in_(service), Price.version == year_version]
 
-    # 处理搜索类型和内容
     if search and search_type:
         if search_type == '资源名':
             filters.append(Cost.usingfor.contains(search))
         elif search_type == 'ip':
             filters.append(or_(Cost.ip.contains(search), Cost.eip.contains(search)))
 
-    # 添加正确的 join 条件
     query = db.session.query(Cost, Price).join(Price, Price.format == Cost.bill_subject).filter(and_(*filters))
-
-    # 获取所有符合条件的记录
     costs = query.all()
 
-    # 准备返回数据的列表
     result = []
 
-    # 处理每个cost项
     for cost, price in costs:
-        # 获取计费规则
         city = City.query.filter_by(cities=cost.city).first()
-
-        # 判断是否含电费
         base_price = price.price_with_elect if city.with_elect else price.price
 
-        # 计算存储计费
+        monthly_price = base_price
+
+        # 获取每个存储类型的价格时，根据城市判断使用带电费或不带电费的价格
+
+        # 计算 SSD 的价格
+        if cost.ssd > 0:
+            ssd_price_entry = Price.query.filter_by(format='ssd', version=year_version).first()
+            ssd_price = ssd_price_entry.price_with_elect if city.with_elect else ssd_price_entry.price
+            monthly_price += (cost.ssd / 100) * ssd_price
+
+        # 计算 HDD 的价格
+        if cost.hdd > 0:
+            hdd_price_entry = Price.query.filter_by(format='hdd', version=year_version).first()
+            hdd_price = hdd_price_entry.price_with_elect if city.with_elect else hdd_price_entry.price
+            monthly_price += (cost.hdd / 100) * hdd_price
+
+        # 计算 RDS 存储的价格
+        if cost.rds_storage > 0:
+            rds_price_entry = Price.query.filter_by(format='rds', version=year_version).first()
+            rds_price = rds_price_entry.price_with_elect if city.with_elect else rds_price_entry.price
+            monthly_price += (cost.rds_storage / 100) * rds_price
+
+        # 计算 OSS 存储的价格
+        if cost.oss_storage > 0:
+            oss_price_entry = Price.query.filter_by(format='oss', version=year_version).first()
+            oss_price = oss_price_entry.price_with_elect if city.with_elect else oss_price_entry.price
+            monthly_price += (cost.oss_storage / 1000) * oss_price
+
         storage = []
         if cost.ssd > 0:
             storage.append(f"ECS_SSD:{cost.ssd}GB")
@@ -211,20 +240,23 @@ def calculate_price():
             storage.append(f"OSS:{cost.oss_storage}GB")
         storage_str = ", ".join(storage)
 
-        # 计算月费用
-        monthly_price = base_price
-        monthly_price += (cost.ssd / 100) * base_price
-        monthly_price += (cost.hdd / 100) * base_price
-        monthly_price += (cost.rds_storage / 100) * base_price
-        monthly_price += (cost.oss_storage / 1000) * base_price
+        add_fee_product_list = []
+        if cost.add_fee:
+            add_fees = json.loads(cost.add_fee).get('add_fee', [])
+            for fee in add_fees:
+                for fee_id, quantity in fee.items():
+                    add_fee_entry = AddFee.query.get(fee_id)
+                    if add_fee_entry:
+                        monthly_price += add_fee_entry.price * quantity
+                        add_fee_product_list.append(f"{add_fee_entry.product}: {quantity}")
 
-        # 计算总费用
+        add_fee_products = ", ".join(add_fee_product_list)
+
         start_date = cost.start_bill_time
 
-        # 处理计费逻辑
-        if cost.ischangedtime:  # 忽略 changedtime 的记录
+        if cost.ischangedtime:
             is_changed_time = cost.ischangedtime
-            is_changed_date_str = str(is_changed_time).split(' ')[0]  # 获取日期部分
+            is_changed_date_str = str(is_changed_time).split(' ')[0]
             is_changed_date = datetime.strptime(is_changed_date_str, '%Y-%m-%d').date()
 
             if start_month <= is_changed_date <= end_month:
@@ -235,19 +267,17 @@ def calculate_price():
             elif is_changed_date > end_month:
                 month_difference = (end_month - start_date).days // 30 + 1
             else:
-                month_difference = 0  # is_changed在请求范围之前
-        else:  # 没有is_changed，使用原来的逻辑
+                month_difference = 0
+        else:
             if start_month <= start_date <= end_month:
                 month_difference = (end_month.year - start_date.year) * 12 + end_month.month - start_date.month + 1
             elif start_date < start_month:
                 month_difference = (end_month.year - start_month.year) * 12 + end_month.month - start_month.month + 1
             else:
-                month_difference = 0  # 不在请求时间段内
+                month_difference = 0
 
-        # 计算总费用
         total_price = monthly_price * month_difference
 
-        # 构建返回结果字典
         result.append({
             'key': cost.uuid,
             'resource_type': price.project,
@@ -268,9 +298,11 @@ def calculate_price():
             'monthly_price': monthly_price,
             'cost_month': month_difference,
             'all_price': total_price,
+            'add_fee': add_fee_products  # 添加 `add_fee` 字段，包含 product 和数量
         })
 
     return jsonify(result)
+
 
 
 if __name__ == '__main__':
