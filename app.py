@@ -201,7 +201,7 @@ def calculate_price():
         elif search_type == 'ip':
             filters.append(or_(Cost.ip.contains(search), Cost.eip.contains(search)))
 
-    query = db.session.query(Cost, Price, Service).join(Price, Price.format == Cost.bill_subject)\
+    query = db.session.query(Cost, Price, Service).join(Price, Price.format == Cost.bill_subject) \
         .join(Service, Service.service == Cost.service).filter(and_(*filters))
     costs = query.all()
 
@@ -289,7 +289,6 @@ def calculate_price():
         total_price = monthly_price * month_difference
 
         result.append({
-            'key': cost.uuid,
             'resource_type': price.project,
             'city': cost.city,
             'payment': cost.payment,
@@ -301,10 +300,11 @@ def calculate_price():
             'subject': cost.bill_subject,
             'ip': cost.ip,
             'eip': cost.eip,
+            'system': cost.system,
             'start_time': str(cost.start_time),
             'storage': storage_str,
             'comment': cost.comment,
-            'visible': cost.visible,
+            'ischanged': cost.ischanged,
             'monthly_price': monthly_price,
             'cost_month': month_difference,
             'all_price': total_price,
