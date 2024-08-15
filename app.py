@@ -171,7 +171,7 @@ def get_tree_data():
 
 @app.route('/getAllService', methods=['GET'])
 def get_all_usingFor():
-    usingFor = db.session.query(Cost.service).distinct().all()
+    usingFor = db.session.query(Service.service).distinct().all()
     # 将查询结果转换为单一列表
     using_for_list = [uf[0] for uf in usingFor]
     return jsonify(using_for_list)
@@ -201,12 +201,13 @@ def calculate_price():
         elif search_type == 'ip':
             filters.append(or_(Cost.ip.contains(search), Cost.eip.contains(search)))
 
-    query = db.session.query(Cost, Price).join(Price, Price.format == Cost.bill_subject).filter(and_(*filters))
+    query = db.session.query(Cost, Price, Service).join(Price, Price.format == Cost.bill_subject)\
+        .join(Service, Service.service == Cost.service).filter(and_(*filters))
     costs = query.all()
 
     result = []
 
-    for cost, price in costs:
+    for cost, price, service in costs:
         city = City.query.filter_by(cities=cost.city).first()
         base_price = price.price_with_elect if city.with_elect else price.price
 
@@ -307,7 +308,9 @@ def calculate_price():
             'monthly_price': monthly_price,
             'cost_month': month_difference,
             'all_price': total_price,
-            'add_fee': add_fee_products
+            'add_fee': add_fee_products,
+            'client': service.client,
+            'client_phone': service.client_phone,
         })
 
     return jsonify(result)
