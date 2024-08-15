@@ -171,8 +171,10 @@ def get_tree_data():
 
 @app.route('/getAllUsingFor', methods=['GET'])
 def get_all_usingFor():
-    usingFor = Cost.usingfor.distinct().all()
-    return jsonify(usingFor)
+    usingFor = db.session.query(Cost.usingfor).distinct().all()
+    # 将查询结果转换为单一列表
+    using_for_list = [uf[0] for uf in usingFor]
+    return jsonify(using_for_list)
 
 
 @app.route('/DescribeCost', methods=['POST'])
