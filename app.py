@@ -329,5 +329,12 @@ def get_City_List():
     return jsonify(result)
 
 
+@app.route('/GetUnitList', methods=['GET'])
+def get_Unit_List():
+    unit_list = Service.query.all()
+    result = [{'value': ul.unit, 'label': ul.unit} for ul in unit_list]
+    return jsonify(result)
+
+
 if __name__ == '__main__':
     app.run()
