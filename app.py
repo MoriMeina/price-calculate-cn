@@ -53,7 +53,6 @@ class Cost(db.Model):
     hdd = db.Column(db.Integer)
     rds_storage = db.Column(db.Integer)
     oss_storage = db.Column(db.Integer)
-    sec_fee = db.Column(db.Boolean)
     add_fee = db.Column(db.String(255))
     visible = db.Column(db.Boolean)
     ischanged = db.Column(db.Boolean)
@@ -320,6 +319,13 @@ def calculate_price():
 def get_year_version():
     year_versions = YearVersion.query.all()
     result = [{'value': yv.year_version, 'label': yv.year_version} for yv in year_versions]
+    return jsonify(result)
+
+
+@app.route('/GetCityList', methods=['GET'])
+def get_City_List():
+    city_list = City.query.all()
+    result = [{'value': ct.cities, 'label': ct.cities} for ct in city_list]
     return jsonify(result)
 
 
