@@ -8,10 +8,11 @@ import json
 app = Flask(__name__)
 CORS(app)
 
-user = 'root'
-password = 'Meina9758'
+user = 'aurora'
+password = 'srwtxb16saj9ncg'
 database = 'price-calculate-cn'
-app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{user}:{password}@10.1.0.110:3306/{database}'
+app.config[
+    'SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{user}:{password}@10.11.203.118:3306/{database}?connect_timeout=50'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = False
 app.config['SQLALCHEMY_ECHO'] = True
@@ -168,6 +169,12 @@ def get_tree_data():
     return jsonify(tree_data)
 
 
+@app.route('/getAllUsingFor', methods=['GET'])
+def get_all_usingFor():
+    usingFor = Cost.usingfor.distinct().all()
+    return jsonify(usingFor)
+
+
 @app.route('/DescribeCost', methods=['POST'])
 def calculate_price():
     data = request.json
@@ -291,18 +298,24 @@ def calculate_price():
             'subject': cost.bill_subject,
             'ip': cost.ip,
             'eip': cost.eip,
-            'start_time': cost.start_time,
+            'start_time': str(cost.start_time),
             'storage': storage_str,
             'comment': cost.comment,
             'visible': cost.visible,
             'monthly_price': monthly_price,
             'cost_month': month_difference,
             'all_price': total_price,
-            'add_fee': add_fee_products  # 添加 `add_fee` 字段，包含 product 和数量
+            'add_fee': add_fee_products
         })
 
     return jsonify(result)
 
+
+@app.route('/GetYearVersion', methods=['GET'])
+def get_year_version():
+    year_versions = YearVersion.query.all()
+    result = [{'value': yv.year_version, 'label': yv.year_version} for yv in year_versions]
+    return jsonify(result)
 
 
 if __name__ == '__main__':
