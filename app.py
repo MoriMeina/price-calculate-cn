@@ -54,7 +54,6 @@ class Cost(db.Model):
     rds_storage = db.Column(db.Integer)
     oss_storage = db.Column(db.Integer)
     add_fee = db.Column(db.String(255))
-    visible = db.Column(db.Boolean)
     ischanged = db.Column(db.Boolean)
     ischangedtime = db.Column(db.DateTime)
     comment = db.Column(db.Text)
@@ -108,7 +107,7 @@ def build_tree_data(services):
         # 创建城市节点
         if city not in city_map:
             Top = "top"
-            key_value = f"{city}-{Top}"
+            key_value = f"{city}"
             city_node = {
                 'title': city,
                 'value': key_value,  # 使用城市名作为 value
@@ -179,7 +178,6 @@ def get_all_usingFor():
 @app.route('/DescribeCost', methods=['POST'])
 def calculate_price():
     data = request.json
-
     cost_month = data.get('cost_month')
     service = data.get('service')
     year_version = data.get('year_version')
@@ -288,6 +286,7 @@ def calculate_price():
         total_price = monthly_price * month_difference
 
         result.append({
+            'key': cost.uuid,
             'resource_type': price.project,
             'city': cost.city,
             'payment': cost.payment,
@@ -322,19 +321,116 @@ def get_year_version():
     return jsonify(result)
 
 
-@app.route('/GetCityList', methods=['GET'])
-def get_City_List():
-    city_list = City.query.all()
-    result = [{'value': ct.cities, 'label': ct.cities} for ct in city_list]
+@app.route('/getFormatsByProduct', methods=['GET'])
+def get_formats_by_product():
+    product = request.args.get('product')
+
+    if not product:
+        return jsonify([]), 200
+
+    # 查询 Price 表中 format 字段与传入的 product 匹配的记录
+    formats = db.session.query(Price.format).filter_by(project=product).distinct().all()
+
+    # 将查询结果格式化为 [{'value': format, 'label': format}] 格式
+    result = [{'value': fmt[0], 'label': fmt[0]} for fmt in formats]
+
     return jsonify(result)
 
 
-@app.route('/GetUnitList', methods=['GET'])
-def get_Unit_List():
-    unit_list = Service.query.all()
-    result = [{'value': ul.unit, 'label': ul.unit} for ul in unit_list]
+@app.route('/GetAddFee', methods=['GET'])
+def get_Add_Fee():
+    add_fee_list = AddFee.query.all()
+    result = [{'key': af.id, 'value': af.id, 'label': af.product} for af in add_fee_list]
     return jsonify(result)
+
+
+@app.route('/CreateCost', methods=['POST'])
+def create_cost():
+    data = request.json
+
+    # 拆分 service_unit 字段
+    service_unit = data.get("service_unit", "")
+    service_unit_parts = service_unit.split("-")
+    city = service_unit_parts[0] if len(service_unit_parts) > 0 else None
+    unit = service_unit_parts[1] if len(service_unit_parts) > 1 else None
+    second_unit = service_unit_parts[2] if len(service_unit_parts) > 2 else None
+
+    # 获取其他字段
+    service_name = data.get("service")
+    usingfor = data.get("usingfor")
+    commit_id = data.get("commit_id")
+    payment = data.get("payment")
+    client = data.get("client")
+    client_phone = data.get("client_phone")
+    system = data.get("system")
+    ip = data.get("ip")
+    eip = data.get("eip")
+    start_time = data.get("start_time")
+    start_time = datetime.fromisoformat(start_time[:-1]) if start_time else None
+    bill_subject = data.get("bill_subject")
+    ssd = data.get("ssd")
+    hdd = data.get("hdd")
+    rds_storage = data.get("rds_storage")
+    oss_storage = data.get("oss_storage")
+    add_fee = data.get("addFee")
+
+    # 查询 Service 表以检查 service 是否存在
+    service_exists = db.session.query(Service).filter_by(service=service_name).first()
+
+    if not service_exists:
+        # 如果 service 不存在，则检查 city 是否存在于 City 表中
+        city_exists = db.session.query(City).filter_by(cities=city).first()
+        if not city_exists:
+            # 如果 city 不存在于 City 表中，则插入 city
+            new_city = City(cities=city, with_elect=False)  # 你可以根据需求设置 with_elect 字段的值
+            db.session.add(new_city)
+            db.session.commit()
+
+        # 插入 service 到 Service 表中
+        new_service = Service(
+            city=city,
+            unit=unit,
+            second_unit=second_unit,
+            service=service_name,
+            client=client,
+            client_phone=client_phone
+        )
+        db.session.add(new_service)
+        db.session.commit()
+
+    # 处理 add_fee 字段，将其包装为字典并转换为 JSON 字符串
+    add_fee_json = json.dumps({"add_fee": add_fee}) if add_fee else None
+
+    # 无论 service 是否已存在，现在将数据插入 Cost 表中
+    cost = Cost(
+        city=city,
+        payment=payment,
+        commit_id=commit_id,
+        unit=unit,
+        second_unit=second_unit,
+        service=service_name,
+        usingfor=usingfor,
+        system=system,
+        ip=ip,
+        eip=eip,
+        start_time=start_time,
+        bill_subject=bill_subject,
+        ssd=ssd if ssd else 0,
+        hdd=hdd if hdd else 0,
+        rds_storage=rds_storage if rds_storage else 0,
+        oss_storage=oss_storage if oss_storage else 0,
+        add_fee=add_fee_json,
+        ischanged=None,
+        ischangedtime=None,
+        comment=None
+    )
+
+    # 将 Cost 实例添加到数据库会话
+    db.session.add(cost)
+    db.session.commit()
+
+    return jsonify({"message": "Data processed and saved successfully."}), 201
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(debug=True)
