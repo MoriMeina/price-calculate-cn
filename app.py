@@ -74,15 +74,18 @@ class Price(db.Model):
 
 class City(db.Model):
     __tablename__ = 'city'
-    cities = db.Column(db.String(255), primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
+    cities = db.Column(db.String(255))
     with_elect = db.Column(db.Boolean)
+    uuid = db.Column(db.String(255))
 
 
 class AddFee(db.Model):
     __tablename__ = 'add_fee'
     id = db.Column(db.Integer, primary_key=True)
     product = db.Column(db.String(255))
-    price = db.Column(db.Float)  # 使用浮点数来表示价格
+    price = db.Column(db.Float)
+    version = db.Column(db.String(255))
 
 
 class YearVersion(db.Model):
@@ -106,7 +109,6 @@ def build_tree_data(services):
 
         # 创建城市节点
         if city not in city_map:
-            Top = "top"
             key_value = f"{city}"
             city_node = {
                 'title': city,
@@ -174,6 +176,14 @@ def get_all_usingFor():
     using_for_list = [uf[0] for uf in usingFor]
     return jsonify(using_for_list)
 
+
+#
+#
+#
+# 计费表格相关接口
+#
+#
+#
 
 @app.route('/DescribeCost', methods=['POST'])
 def calculate_price():
@@ -247,12 +257,14 @@ def calculate_price():
             storage.append(f"OSS:{cost.oss_storage}GB")
         storage_str = ", ".join(storage)
 
+        # 计算附加费用时加入 year_version 过滤
         add_fee_product_list = []
         if cost.add_fee:
             add_fees = json.loads(cost.add_fee).get('add_fee', [])
             for fee in add_fees:
                 for fee_id, quantity in fee.items():
-                    add_fee_entry = AddFee.query.get(fee_id)
+                    add_fee_entry = AddFee.query.filter_by(id=fee_id,
+                                                           version=year_version).first()  # 加入 year_version 过滤
                     if add_fee_entry:
                         monthly_price += add_fee_entry.price * quantity
                         add_fee_product_list.append(f"{add_fee_entry.product}: {quantity}")
@@ -339,7 +351,8 @@ def get_formats_by_product():
 
 @app.route('/GetAddFee', methods=['GET'])
 def get_Add_Fee():
-    add_fee_list = AddFee.query.all()
+    version = request.args.get('addVersion')
+    add_fee_list = AddFee.query.filter_by(version=version)
     result = [{'key': af.id, 'value': af.id, 'label': af.product} for af in add_fee_list]
     return jsonify(result)
 
@@ -430,6 +443,68 @@ def create_cost():
     db.session.commit()
 
     return jsonify({"message": "Data processed and saved successfully."}), 201
+
+
+@app.route('/getCostByKey', methods=['GET'])
+def get_cost_by_key():
+    key = request.args.get('key')
+    if key:
+        cost = Cost.query.filter_by(uuid=key).first()
+        if cost:
+            # 根据 bill_subject 从 price 表中查询 project
+            price = Price.query.filter_by(format=cost.bill_subject).first()
+            resource_type = price.project if price else None
+
+            result = {
+                'key': cost.uuid,
+                'resource_type': resource_type,
+                'city': cost.city,
+                'payment': cost.payment,
+                'commit_id': cost.commit_id,
+                'unit': cost.unit,
+                'second_unit': cost.second_unit,
+                'service': cost.service,
+                'usingfor': cost.usingfor,
+                'subject': cost.bill_subject,
+                'ip': cost.ip,
+                'eip': cost.eip,
+                'system': cost.system,
+                'ssd': cost.ssd,
+                'hdd': cost.hdd,
+                'rds_storage': cost.rds_storage,
+                'oss_storage': cost.oss_storage,
+                'add_fee': cost.add_fee,
+                'comment': cost.comment,
+            }
+            return jsonify(result)
+        else:
+            return jsonify({"error": "Cost not found."}), 404
+    else:
+        return jsonify({"error": "Key parameter is required."}), 400
+
+
+#
+#
+#
+# 区县编辑
+#
+#
+#
+@app.route('/DescribeCity', methods=['GET'])
+def describe_city():
+    result = []
+    city_list = City.query.all()
+    # result = [{'key': city.uuid, 'value': city.cities, 'label': city.cities} for city in city_list]
+    for city in city_list:
+        result.append(
+            {
+                'key': city.uuid,
+                'city': city.cities,
+                'with_elect': city.with_elect,
+            }
+        )
+
+    return jsonify(result)
 
 
 if __name__ == '__main__':
