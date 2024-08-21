@@ -5,6 +5,8 @@ from flask_cors import CORS
 from sqlalchemy import and_, or_
 import json
 
+from sqlalchemy.exc import IntegrityError
+
 app = Flask(__name__)
 CORS(app)
 
@@ -669,6 +671,97 @@ def describe_city():
         )
 
     return jsonify(result)
+
+
+#
+#
+#
+# City修改接口
+#
+#
+#
+@app.route('/UpdateCity/<uuid>', methods=['PUT'])
+def update_city(uuid):
+    data = request.get_json()
+
+    # 查找要更新的记录
+    city = City.query.filter_by(uuid=uuid).first()
+
+    if not city:
+        return jsonify({'message': 'City not found'}), 404
+
+    # 更新字段
+    if 'city' in data:
+        city.cities = data['city']
+    if 'with_elect' in data:
+        city.with_elect = data['with_elect']
+
+    try:
+        db.session.commit()
+        return jsonify({'message': 'City updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        return jsonify({'message': 'Failed to update city'}), 500
+
+
+#
+#
+#
+# City修改接口
+#
+#
+#
+@app.route('/AddCity', methods=['POST'])
+def add_city():
+    data = request.json
+    city_name = data.get('city')
+    with_elect = data.get('with_elect')
+
+    # 检查是否已有相同的城市记录
+    existing_city = City.query.filter_by(cities=city_name).first()
+    if existing_city:
+        return jsonify({'success': False, 'error': '城市已存在'}), 400
+
+    # 创建新的 City 实例
+    new_city = City(cities=city_name, with_elect=with_elect)
+
+    try:
+        db.session.add(new_city)
+        db.session.commit()
+
+        # 返回新生成的 UUID
+        return jsonify({'success': True, 'uuid': new_city.uuid}), 201
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+
+#
+#
+#
+# City删除接口
+#
+#
+#
+@app.route('/DeleteCity/<string:key>', methods=['DELETE'])
+def delete_city(key):
+    city = City.query.filter_by(uuid=key).first()
+    if city:
+        try:
+            db.session.delete(city)
+            db.session.commit()
+            return jsonify({'success': True}), 200
+        except IntegrityError:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': 'Cannot delete city due to foreign key constraints'}), 400
+        except Exception as e:
+            db.session.rollback()
+            print(e)
+            return jsonify({'success': False, 'error': str(e)}), 400
+    return jsonify({'success': False, 'error': 'City not found'}), 404
 
 
 if __name__ == '__main__':
