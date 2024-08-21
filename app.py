@@ -162,12 +162,29 @@ def build_tree_data(services):
     return tree_data
 
 
+#
+#
+#
+# 树状返回区县、单位、二级单位、服务信息
+#
+#
+#
+
+
 @app.route('/getServiceByTree', methods=['GET'])
 def get_tree_data():
     services = Service.query.all()
     tree_data = build_tree_data(services)
     return jsonify(tree_data)
 
+
+#
+#
+#
+# 获取全部IRS系统接口
+#
+#
+#
 
 @app.route('/getAllService', methods=['GET'])
 def get_all_usingFor():
@@ -180,7 +197,117 @@ def get_all_usingFor():
 #
 #
 #
-# 计费表格相关接口
+# 计费变配接口
+#
+#
+#
+@app.route('/ModifyCost', methods=['POST'])
+def modify_cost():
+    data = request.get_json()
+
+    uuid = data.get('uuid')
+    commit_id = data.get('commit_id')
+    system = data.get('system')
+    ip = data.get('ip')
+    eip = data.get('eip')
+    changed_time = data.get('changed_time')
+    bill_subject = data.get('bill_subject')
+    ssd = data.get('ssd')
+    hdd = data.get('hdd')
+    rds_storage = data.get('rds_storage')
+    oss_storage = data.get('oss_storage')
+    add_fee = data.get('addFee')
+    comment = data.get('comment')
+
+    # 查找现有记录
+    existing_cost = Cost.query.filter_by(uuid=uuid).first()
+
+    if not existing_cost:
+        return jsonify({"message": "No cost record found with the provided UUID"}), 404
+
+    # 更新现有记录的ischanged和ischangedtime字段
+    existing_cost.ischanged = True
+    existing_cost.comment = comment
+    existing_cost.ischangedtime = datetime.strptime(changed_time, '%Y-%m-%d %H:%M:%S')
+
+    add_fee_json = json.dumps({"add_fee": add_fee}) if add_fee else None
+
+    # 复制现有记录，创建一个新的Cost记录
+    new_cost = Cost(
+        uuid=existing_cost.uuid,
+        city=existing_cost.city,
+        payment=existing_cost.payment,
+        commit_id=commit_id,
+        unit=existing_cost.unit,
+        second_unit=existing_cost.second_unit,
+        service=existing_cost.service,
+        usingfor=existing_cost.usingfor,
+        system=system,
+        ip=ip,
+        eip=eip,
+        start_time=changed_time,
+        start_bill_time=existing_cost.start_bill_time,
+        bill_subject=bill_subject,
+        ssd=ssd if ssd else 0,
+        hdd=hdd if hdd else 0,
+        rds_storage=rds_storage if rds_storage else 0,
+        oss_storage=oss_storage if oss_storage else 0,
+        add_fee=add_fee_json,  # 存储为字符串
+        ischanged=None,
+        ischangedtime=None,
+    )
+
+    db.session.add(new_cost)
+    db.session.commit()
+
+    return jsonify({"message": "Cost record updated successfully"}), 200
+
+
+#
+#
+#
+# 注销计费接口
+#
+#
+#
+@app.route('/CancelCost', methods=['POST'])
+def cancel_cost():
+    try:
+        # 获取前端传递的数据
+        data = request.get_json()
+        uuid = data.get('uuid')
+        cancel_time = data.get('cancel_time')
+        comment = data.get('comment')
+
+        # 检查是否传递了必要的参数
+        if not uuid or not cancel_time:
+            return jsonify({"error": "UUID and cancel_time are required"}), 400
+
+        # 查找匹配的cost记录
+        cost_record = Cost.query.filter_by(uuid=uuid).first()
+
+        if not cost_record:
+            return jsonify({"error": "No record found for the provided UUID"}), 404
+
+        # 更新记录
+        cost_record.ischanged = 0
+        cost_record.ischangedtime = datetime.strptime(cancel_time, '%Y-%m-%d %H:%M:%S')
+        cost_record.comment = comment
+
+        # 提交更改到数据库
+        db.session.commit()
+
+        return jsonify({"message": "Cost record updated successfully"}), 200
+
+    except Exception as e:
+        db.session.rollback()  # 回滚数据库事务以防止数据不一致
+        return jsonify({"error": str(e)}), 500
+
+
+#
+#
+#
+# 计费表读取接口
 #
 #
 #
@@ -209,7 +336,8 @@ def calculate_price():
             filters.append(or_(Cost.ip.contains(search), Cost.eip.contains(search)))
 
     query = db.session.query(Cost, Price, Service).join(Price, Price.format == Cost.bill_subject) \
-        .join(Service, Service.service == Cost.service).filter(and_(*filters))
+        .join(Service, Service.service == Cost.service).filter(and_(*filters)) \
+        .order_by(Cost.id.desc())
     costs = query.all()
 
     result = []
@@ -326,6 +454,13 @@ def calculate_price():
     return jsonify(result)
 
 
+#
+#
+#
+# 获取计费版本接口（从year_version表中获取）
+#
+#
+#
 @app.route('/GetYearVersion', methods=['GET'])
 def get_year_version():
     year_versions = YearVersion.query.all()
@@ -333,6 +468,13 @@ def get_year_version():
     return jsonify(result)
 
 
+#
+#
+#
+# 根据计费版本获取产品列表接口（从price表中获取）
+#
+#
+#
 @app.route('/getFormatsByProduct', methods=['GET'])
 def get_formats_by_product():
     product = request.args.get('product')
@@ -349,6 +491,14 @@ def get_formats_by_product():
     return jsonify(result)
 
 
+#
+#
+#
+# 根据计费版本获取产品列表接口（从addFee表中获取）
+#
+#
+#
+
 @app.route('/GetAddFee', methods=['GET'])
 def get_Add_Fee():
     version = request.args.get('addVersion')
@@ -357,6 +507,13 @@ def get_Add_Fee():
     return jsonify(result)
 
 
+#
+#
+#
+# 新增计费接口
+#
+#
+#
 @app.route('/CreateCost', methods=['POST'])
 def create_cost():
     data = request.json
@@ -445,6 +602,13 @@ def create_cost():
     return jsonify({"message": "Data processed and saved successfully."}), 201
 
 
+#
+#
+#
+# 通过UUID获取Cost表中的记录（给前端变配、注销用）
+#
+#
+#
 @app.route('/getCostByKey', methods=['GET'])
 def get_cost_by_key():
     key = request.args.get('key')
@@ -486,7 +650,7 @@ def get_cost_by_key():
 #
 #
 #
-# 区县编辑
+# 从City表获取所有城市接口
 #
 #
 #
