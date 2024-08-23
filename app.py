@@ -218,7 +218,7 @@ def modify_cost():
     hdd = data.get('hdd')
     rds_storage = data.get('rds_storage')
     oss_storage = data.get('oss_storage')
-    add_fee = data.get('addFee')
+    get_addFee = data.get('addFee')
     comment = data.get('comment')
 
     # 查找现有记录
@@ -232,7 +232,7 @@ def modify_cost():
     existing_cost.comment = comment
     existing_cost.ischangedtime = datetime.strptime(changed_time, '%Y-%m-%d %H:%M:%S')
 
-    add_fee_json = json.dumps({"add_fee": add_fee}) if add_fee else None
+    add_fee_json = json.dumps({"add_fee": get_addFee}) if get_addFee else None
 
     # 复制现有记录，创建一个新的Cost记录
     new_cost = Cost(
@@ -544,7 +544,7 @@ def create_cost():
     hdd = data.get("hdd")
     rds_storage = data.get("rds_storage")
     oss_storage = data.get("oss_storage")
-    add_fee = data.get("addFee")
+    get_addFee = data.get("addFee")
 
     # 查询 Service 表以检查 service 是否存在
     service_exists = db.session.query(Service).filter_by(service=service_name).first()
@@ -571,7 +571,7 @@ def create_cost():
         db.session.commit()
 
     # 处理 add_fee 字段，将其包装为字典并转换为 JSON 字符串
-    add_fee_json = json.dumps({"add_fee": add_fee}) if add_fee else None
+    add_fee_json = json.dumps({"add_fee": get_addFee}) if get_addFee else None
 
     # 无论 service 是否已存在，现在将数据插入 Cost 表中
     cost = Cost(
@@ -738,7 +738,6 @@ def add_city():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
-
 #
 #
 #
@@ -762,6 +761,455 @@ def delete_city(key):
             print(e)
             return jsonify({'success': False, 'error': str(e)}), 400
     return jsonify({'success': False, 'error': 'City not found'}), 404
+
+
+#
+#
+#
+# Price表获取接口
+#
+#
+#
+@app.route('/DescribePrice', methods=['GET'])
+def describe_price():
+    result = []
+    price_list = Price.query.all()
+    for price in price_list:
+        result.append({
+            'key': price.uuid,
+            'project': price.project,
+            'billing': price.billing,
+            'format_name': price.format_name,
+            'format': price.format,
+            'price': price.price,
+            'price_with_elect': price.price_with_elect,
+            'version': price.version,
+        })
+    return jsonify(result)
+
+
+#
+#
+#
+# Price修改取接口
+#
+#
+#
+@app.route('/UpdatePrice/<string:key>', methods=['PUT'])
+def update_price(key):
+    data = request.json
+    price_record = Price.query.filter_by(uuid=key).first()
+
+    if price_record:
+        try:
+            price_record.project = data.get('project')
+            price_record.billing = data.get('billing')
+            price_record.format_name = data.get('format_name')
+            price_record.format = data.get('format')
+            price_record.price = data.get('price')
+            price_record.price_with_elect = data.get('price_with_elect')
+            price_record.version = data.get('version')
+
+            db.session.commit()
+            return jsonify({'success': True}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': str(e)}), 400
+
+    return jsonify({'success': False, 'error': 'Price record not found'}), 404
+
+
+#
+#
+#
+# Price表添加接口
+#
+#
+#
+@app.route('/AddPrice', methods=['POST'])
+def add_price():
+    data = request.json
+    project = data.get('project')
+    billing = data.get('billing')
+    format_name = data.get('format_name')
+    Price_format = data.get('format')
+    price = data.get('price')
+    price_with_elect = data.get('price_with_elect')
+    version = data.get('version')
+
+    # Create a new Price instance without UUID
+    new_price = Price(
+        project=project,
+        billing=billing,
+        format_name=format_name,
+        format=Price_format,
+        price=price,
+        price_with_elect=price_with_elect,
+        version=version
+    )
+
+    try:
+        db.session.add(new_price)
+        db.session.commit()
+
+        # Return the newly created record including UUID
+        return jsonify({
+            'success': True,
+            'data': {
+                'project': new_price.project,
+                'billing': new_price.billing,
+                'format_name': new_price.format_name,
+                'format': new_price.format,
+                'price': new_price.price,
+                'price_with_elect': new_price.price_with_elect,
+                'version': new_price.version,
+                'uuid': new_price.uuid
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+#
+#
+#
+# Price表删除接口
+#
+#
+#
+@app.route('/DeletePrice/<string:key>', methods=['DELETE'])
+def delete_price(key):
+    price = Price.query.filter_by(uuid=key).first()
+    if price:
+        try:
+            db.session.delete(price)
+            db.session.commit()
+            return jsonify({'success': True}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': str(e)}), 400
+    return jsonify({'success': False, 'error': 'Price record not found'}), 404
+
+
+#
+#
+#
+# 返回addFee表
+#
+#
+#
+@app.route('/DescribeAddFee', methods=['GET'])
+def describe_add_fee():
+    try:
+        fees = AddFee.query.all()
+        result = [{'id': fee.id, 'product': fee.product, 'price': fee.price, 'version': fee.version}
+                  for fee in fees]
+        return jsonify(result), 200
+    except Exception as e:
+        print(e)
+        return jsonify({'error': 'Unable to fetch data'}), 500
+
+
+#
+#
+#
+# AddFee表添加接口
+#
+#
+#
+@app.route('/AddAddFee', methods=['POST'])
+def add_fee():
+    data = request.json
+    product = data.get('product')
+    price = data.get('price')
+    version = data.get('version')
+
+    new_fee = AddFee(
+        product=product,
+        price=price,
+        version=version
+    )
+
+    try:
+        db.session.add(new_fee)
+        db.session.commit()
+
+        # 返回新创建的记录，包括自动生成的 UUID
+        return jsonify({
+            'success': True,
+            'data': {
+                'id': new_fee.id,
+                'product': new_fee.product,
+                'price': new_fee.price,
+                'version': new_fee.version,
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        print(e)
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+#
+#
+#
+# AddFee表修改接口
+#
+#
+#
+@app.route('/UpdateAddFee/<string:request_id>', methods=['PUT'])
+def update_fee(request_id):
+    data = request.json
+    product = data.get('product')
+    price = data.get('price')
+    version = data.get('version')
+
+    fee = AddFee.query.filter_by(id=request_id).first()
+    if fee:
+        try:
+            fee.product = product
+            fee.price = price
+            fee.version = version
+
+            db.session.commit()
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'id': fee.id,
+                    'product': fee.product,
+                    'price': fee.price,
+                    'version': fee.version,
+                }
+            }), 200
+        except Exception as e:
+            db.session.rollback()
+            print(e)
+            return jsonify({'success': False, 'error': str(e)}), 400
+    return jsonify({'success': False, 'error': 'Fee not found'}), 404
+
+
+#
+#
+#
+# AddFee表删除接口
+#
+#
+#
+@app.route('/DeleteAddFee/<string:request_id>', methods=['DELETE'])
+def delete_fee(request_id):
+    fee = AddFee.query.filter_by(id=request_id).first()
+    if fee:
+        try:
+            db.session.delete(fee)
+            db.session.commit()
+            return jsonify({'success': True}), 200
+        except IntegrityError:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': 'Cannot delete fee due to foreign key constraints'}), 400
+        except Exception as e:
+            db.session.rollback()
+            print(e)
+            return jsonify({'success': False, 'error': str(e)}), 400
+    return jsonify({'success': False, 'error': 'Fee not found'}), 404
+
+
+#
+#
+#
+# Service表添加接口
+#
+#
+#
+@app.route('/addService', methods=['POST'])
+def add_service():
+    data = request.json
+    city = data.get('city')
+    unit = data.get('unit')
+    second_unit = data.get('second_unit')
+    service = data.get('service')
+    client = data.get('client')
+    client_phone = data.get('client_phone')
+
+    new_service = Service(
+        city=city,
+        unit=unit,
+        second_unit=second_unit,
+        service=service,
+        client=client,
+        client_phone=client_phone
+    )
+
+    try:
+        db.session.add(new_service)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'uuid': new_service.uuid,
+                'city': new_service.city,
+                'unit': new_service.unit,
+                'second_unit': new_service.second_unit,
+                'service': new_service.service,
+                'client': new_service.client,
+                'client_phone': new_service.client_phone
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+#
+#
+#
+# Service表查询接口
+#
+#
+#
+@app.route('/getService', methods=['GET'])
+def get_services():
+    services = Service.query.all()
+    result = [{
+        'uuid': service.uuid,
+        'city': service.city,
+        'unit': service.unit,
+        'second_unit': service.second_unit,
+        'service': service.service,
+        'client': service.client,
+        'client_phone': service.client_phone
+    } for service in services]
+    return jsonify(result)
+
+
+#
+#
+#
+# Service表更新接口
+#
+#
+#
+@app.route('/updateService/<string:uuid>', methods=['PUT'])
+def update_service(uuid):
+    data = request.json
+    service = Service.query.filter_by(uuid=uuid).first()
+
+    if not service:
+        return jsonify({'success': False, 'error': 'Service not found'}), 404
+
+    service.city = data.get('city', service.city)
+    service.unit = data.get('unit', service.unit)
+    service.second_unit = data.get('second_unit', service.second_unit)
+    service.service = data.get('service', service.service)
+    service.client = data.get('client', service.client)
+    service.client_phone = data.get('client_phone', service.client_phone)
+
+    try:
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'data': {
+                'uuid': service.uuid,
+                'city': service.city,
+                'unit': service.unit,
+                'second_unit': service.second_unit,
+                'service': service.service,
+                'client': service.client,
+                'client_phone': service.client_phone
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+#
+#
+#
+# Service表删除接口
+#
+#
+#
+@app.route('/deleteService/<string:uuid>', methods=['DELETE'])
+def delete_service(uuid):
+    service = Service.query.filter_by(uuid=uuid).first()
+
+    if not service:
+        return jsonify({'success': False, 'error': 'Service not found'}), 404
+
+    try:
+        db.session.delete(service)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+
+@app.route('/stats/<field>', methods=['GET'])
+def get_stats(field):
+    # 确保字段是有效的
+    if field not in ['city', 'payment', 'commit_id', 'unit', 'second_unit', 'service', 'usingfor', 'system', 'ip',
+                     'eip', 'bill_subject']:
+        return jsonify({'error': 'Invalid field'}), 400
+
+    # 选择对应的表
+    model = Service if field in ['city', 'unit', 'second_unit'] else Cost
+
+    # 查询字段的统计信息，并限制返回10条记录
+    result = db.session.query(getattr(model, field), db.func.count(getattr(model, field))) \
+        .group_by(getattr(model, field)) \
+        .order_by(db.func.count(getattr(model, field)).desc()) \
+        .limit(10) \
+        .all()
+
+    # 格式化数据
+    stats = [{'type': r[0], 'value': r[1]} for r in result]
+
+    return jsonify(stats)
+
+
+def build_SunTree(services, key_order, current_key=0):
+    tree = {}
+
+    for service in services:
+        # 当前级别的键
+        key = key_order[current_key]
+
+        # 获取该级别的值
+        value = getattr(service, key)
+
+        # 如果该级别的值不在树中，添加它
+        if value not in tree:
+            tree[value] = {
+                "label": value,
+                "children": [],
+                "uv": 0,
+                "sum": 0,
+                "count": 0
+            }
+
+        # 如果还有下一级，递归调用
+        if current_key + 1 < len(key_order):
+            child_tree = build_SunTree([service], key_order, current_key + 1)
+            tree[value]["children"].extend(child_tree.values())
+
+            # 递归结束后，累加子节点的 sum、uv 和 count
+            for child in child_tree.values():
+                tree[value]["sum"] += child["sum"]
+                tree[value]["uv"] += child["uv"]
+                tree[value]["count"] += child["count"]
+        else:
+            # 最后一级的叶节点
+            tree[value]["children"] = None
+            tree[value]["uv"] = 1  # 可以根据需求调整
+            tree[value]["sum"] = 1  # 可以根据需求调整
+            tree[value]["count"] = 0  # 可以根据需求调整
+
+    return tree
 
 
 if __name__ == '__main__':
