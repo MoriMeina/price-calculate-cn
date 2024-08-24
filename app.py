@@ -1033,6 +1033,11 @@ def add_service():
     client = data.get('client')
     client_phone = data.get('client_phone')
 
+    # 检查是否存在相同的 service
+    existing_service = Service.query.filter_by(service=service).first()
+    if existing_service:
+        return jsonify({'success': False, 'error': 'Service already exists'}), 409
+
     new_service = Service(
         city=city,
         unit=unit,
@@ -1061,6 +1066,7 @@ def add_service():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
+
 
 
 #
@@ -1213,4 +1219,4 @@ def build_SunTree(services, key_order, current_key=0):
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
