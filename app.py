@@ -425,7 +425,7 @@ def calculate_price():
             else:
                 month_difference = 0
 
-        total_price = monthly_price * month_difference
+        total_price = round(monthly_price * month_difference, 2)
 
         result.append({
             'key': cost.uuid,
@@ -445,13 +445,91 @@ def calculate_price():
             'storage': storage_str,
             'comment': cost.comment,
             'ischanged': cost.ischanged,
-            'monthly_price': monthly_price,
+            'monthly_price': round(monthly_price, 2),
             'cost_month': month_difference,
-            'all_price': total_price,
+            'all_price': round(total_price, 2),
             'add_fee': add_fee_products,
             'client': service.client,
             'client_phone': service.client_phone,
         })
+
+    return jsonify(result)
+
+
+@app.route('/Calculate', methods=['POST'])
+def calculate_single_month_price():
+    data = request.json
+
+    # 获取输入的字段并设定默认值
+    bill_subject = data.get('bill_subject')
+    hdd = data.get('hdd', 0)
+    ssd = data.get('ssd', 0)
+    rds_storage = data.get('rds_storage', 0)
+    oss_storage = data.get('oss_storage', 0)
+    add_fee_list = data.get('addFee', [])
+
+    # 如果 bill_subject 或其他存储字段均为空，则返回价格为 0
+    if not bill_subject:
+        return jsonify({'monthly_price': 0}), 200
+
+    year_version = datetime.now().year  # 你可以根据需求设定 year_version
+
+    # 获取用户所在城市信息
+    city = City.query.first()  # 由于没有提供 city 信息，默认获取数据库中的第一个城市
+    with_elect = city.with_elect if city else False
+
+    # 查询基础价格
+    price_entry = Price.query.filter_by(format=bill_subject, version=year_version).first()
+    if not price_entry:
+        return jsonify({'error': f'No price found for the bill_subject {bill_subject} and version {year_version}'}), 400
+
+    base_price = price_entry.price_with_elect if with_elect else price_entry.price
+    monthly_price = base_price
+
+    # 计算 SSD 的价格
+    if ssd > 0:
+        ssd_price_entry = Price.query.filter_by(format='ssd', version=year_version).first()
+        ssd_price = ssd_price_entry.price_with_elect if with_elect else ssd_price_entry.price
+        monthly_price += (ssd / 100) * ssd_price
+
+    # 计算 HDD 的价格
+    if hdd > 0:
+        hdd_price_entry = Price.query.filter_by(format='hdd', version=year_version).first()
+        hdd_price = hdd_price_entry.price_with_elect if with_elect else hdd_price_entry.price
+        monthly_price += (hdd / 100) * hdd_price
+
+    # 计算 RDS 存储的价格
+    if rds_storage > 0:
+        rds_price_entry = Price.query.filter_by(format='rds', version=year_version).first()
+        rds_price = rds_price_entry.price_with_elect if with_elect else rds_price_entry.price
+        monthly_price += (rds_storage / 100) * rds_price
+
+    # 计算 OSS 存储的价格
+    if oss_storage > 0:
+        oss_price_entry = Price.query.filter_by(format='oss', version=year_version).first()
+        oss_price = oss_price_entry.price_with_elect if with_elect else oss_price_entry.price
+        monthly_price += (oss_storage / 1000) * oss_price
+
+    # 处理附加费用
+    add_fee_product_list = []
+    for fee in add_fee_list:
+        for fee_id, quantity in fee.items():
+            add_fee_entry = AddFee.query.filter_by(id=fee_id, version=year_version).first()
+            if add_fee_entry:
+                monthly_price += add_fee_entry.price * quantity
+                add_fee_product_list.append(f"{add_fee_entry.product}: {quantity}")
+
+    add_fee_products = ", ".join(add_fee_product_list)
+
+    result = {
+        'bill_subject': bill_subject,
+        'ssd': ssd,
+        'hdd': hdd,
+        'rds_storage': rds_storage,
+        'oss_storage': oss_storage,
+        'monthly_price': round(monthly_price, 2),
+        'add_fee': add_fee_products
+    }
 
     return jsonify(result)
 
@@ -1066,7 +1144,6 @@ def add_service():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 400
-
 
 
 #
