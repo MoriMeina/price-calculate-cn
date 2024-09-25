@@ -11,10 +11,10 @@ app = Flask(__name__)
 CORS(app)
 
 user = 'aurora'
-password = 'srwtxb16saj9ncg'
-database = 'price-calculate-cn'
+password = 'H0,EkHlH%jAfLc|'
+database = 'sxyd'
 app.config[
-    'SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{user}:{password}@10.11.203.118:3306/{database}?connect_timeout=50'
+    'SQLALCHEMY_DATABASE_URI'] = f'mysql+pymysql://{user}:{password}@10.75.34.9:3306/{database}?connect_timeout=50'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN'] = False
 app.config['SQLALCHEMY_ECHO'] = True
@@ -339,7 +339,7 @@ def calculate_price():
 
     query = db.session.query(Cost, Price, Service).join(Price, Price.format == Cost.bill_subject) \
         .join(Service, Service.service == Cost.service).filter(and_(*filters)) \
-        .order_by(Cost.id.desc())
+        .order_by(Cost.start_time.desc())
     costs = query.all()
 
     result = []
@@ -375,6 +375,7 @@ def calculate_price():
             oss_price_entry = Price.query.filter_by(format='oss', version=year_version).first()
             oss_price = oss_price_entry.price_with_elect if city.with_elect else oss_price_entry.price
             monthly_price += (cost.oss_storage / 1000) * oss_price
+            monthly_price = monthly_price - base_price
 
         storage = []
         if cost.ssd > 0:
